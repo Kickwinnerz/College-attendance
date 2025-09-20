@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Attendance - Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+    :root{
+      --bg:#07110b;
+      --panel:#071a12;
+      --glow:#00ff99;
+      --accent:#00ffff;
+      --muted:#7f8c8d;
+      --danger:#ff4d4d;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;min-height:100vh;font-family:'Share Tech Mono',monospace;
+      background:
+        linear-gradient(180deg,#00120a,#000000);
+      color:var(--glow);
+      padding:28px;
+    }
+    .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    .brand{font-size:18px;color:var(--accent)}
+    .links a{color:var(--muted);text-decoration:none;margin-left:10px}
+    .container{display:grid;grid-template-columns:1fr 420px;gap:18px}
+    .card{background:rgba(0,0,0,0.45);border:1px solid rgba(0,255,153,0.06);padding:14px;border-radius:8px}
+    form.add{display:flex;gap:8px;align-items:center}
+    input, select{background:transparent;border:1px solid rgba(0,255,153,0.06);color:var(--glow);padding:8px;border-radius:6px;font-family:inherit}
+    button{padding:8px 10px;border-radius:6px;border:1px solid rgba(0,255,153,0.12);background:var(--glow);color:#00130a;font-weight:700;cursor:pointer}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{padding:8px;border-bottom:1px dashed rgba(0,255,153,0.04);text-align:left;font-size:14px}
+    .present{background:rgba(0,255,153,0.06);color:var(--glow)}
+    .absent{background:rgba(255,0,0,0.04);color:var(--danger)}
+    #save-btn{margin-top:10px}
+    .small{font-size:12px;color:var(--muted)}
+    .panel-right{position:relative;min-height:200px}
+    .search{margin-bottom:8px}
+    .footnote{margin-top:8px;color:var(--muted);font-size:12px}
+    .neon-border{box-shadow:0 0 18px rgba(0,255,153,0.03) inset}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">D3VI • Attendance System</div>
+    <div class="links">
+      <a href="{{ url_for('logout') }}">Logout</a>
+      <a href="{{ url_for('view_attendance') }}">View</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="card neon-border">
+      <h3 style="margin:0 0 6px 0">Add Student</h3>
+      <form class="add" action="{{ url_for('add_student') }}" method="post">
+        <input name="name" placeholder="Name" required>
+        <input name="roll_no" placeholder="Roll No">
+        <button type="submit">Add</button>
+      </form>
+
+      <h3 style="margin-top:16px">Mark Attendance for
+        <input type="date" id="att-date" value="{{ today }}" style="margin-left:8px">
+      </h3>
+
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Roll</th><th>Status</th></tr></thead>
+        <tbody id="students-tbody">
+          {% for s in students %}
+            <tr data-id="{{ s.id }}">
+              <td>{{ loop.index }}</td>
+              <td>{{ s.name }}</td>
+              <td>{{ s.roll_no }}</td>
+              <td>
+                <select class="status">
+                  <option value="">--</option>
+                  <option value="present">Present</option>
+                  <option value="absent">Absent</option>
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button id="save-btn">Save Attendance</button>
+      <div class="footnote">Saved records are stored in local SQLite (use Supabase/Postgres for production).</div>
+    </div>
+
+    <div class="card panel-right">
+      <h4 style="margin:0 0 8px 0">Export / View</h4>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <form action="{{ url_for('view_attendance') }}" method="get">
+          <label class="small">View by Date</label>
+          <input type="date" name="date">
+          <button style="margin-top:6px">View Date</button>
+        </form>
+
+        <form action="{{ url_for('view_attendance') }}" method="get">
+          <label class="small">View by Year</label>
+          <input name="year" placeholder="Year e.g. 2025" type="number">
+          <button style="margin-top:6px">View Year</button>
+        </form>
+
+        <div style="margin-top:6px">
+          <label class="small">Export CSV (Year)</label><br>
+          <input id="export-year" placeholder="2025" type="number" style="width:140px;margin-top:6px">
+          <button onclick="doExport()" type="button" style="margin-left:8px">Export</button>
+        </div>
+      </div>
+
+      <div style="margin-top:16px">
+        <div class="small">Quick tips:</div>
+        <ul class="small" style="padding-left:18px;color:var(--muted)">
+          <li>Use strong APP_SECRET and TEACHER_PASSWORD in env vars.</li>
+          <li>SQLite is for demo — switch to Postgres for real use.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+<script>
+document.getElementById('save-btn').addEventListener('click', function(){
+  const date = document.getElementById('att-date').value;
+  if(!date){ alert("Select date"); return; }
+  const year = (new Date(date)).getFullYear();
+  const rows = document.querySelectorAll('#students-tbody tr');
+  const marks = {};
+  rows.forEach(r => {
+    const id = r.getAttribute('data-id');
+    const status = r.querySelector('.status').value;
+    if(status) marks[id] = status;
+  });
+  fetch('/attendance/mark', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({date: date, year: year, marks: marks})
+  }).then(r=>r.json()).then(j=>{
+    if(j.ok) alert('Saved');
+  });
+});
+
+function doExport(){
+  const y = document.getElementById('export-year').value;
+  if(!y){ alert("Enter year"); return; }
+  window.location = '/export/year/' + y;
+}
+</script>
+</body>
+</html>
